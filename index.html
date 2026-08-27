@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d1110">
+    <title>Amortize — Loan Calculator</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Loan payoff planner</p>
+          <h1>See every payment<br>before you make it.</h1>
+          <p class="hero-copy">Build a tailored monthly payoff plan, test extra payments, and make your next financial move with clarity.</p>
+        </div>
+        <div class="hero-actions">
+          <button class="icon-button" id="saveButton" type="button" aria-label="Save plan" title="Save plan">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+          </button>
+          <button class="icon-button" id="resetButton" type="button" aria-label="Reset plan" title="Reset plan">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 3v6h6"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="controls" aria-label="Loan configuration">
+          <div class="loan-types" role="tablist" aria-label="Loan type">
+            <button class="loan-type active" type="button" data-loan-type="home" role="tab" aria-selected="true">Home</button>
+            <button class="loan-type" type="button" data-loan-type="auto" role="tab" aria-selected="false">Auto</button>
+            <button class="loan-type" type="button" data-loan-type="personal" role="tab" aria-selected="false">Personal</button>
+          </div>
+
+          <div class="control-section">
+            <p class="section-label">Loan details</p>
+            <div class="control-list" id="loanControls"></div>
+            <label class="date-control" for="startDate">
+              <span>First payment month</span>
+              <input id="startDate" type="month" value="2026-09">
+            </label>
+          </div>
+
+          <div class="control-section extra-section">
+            <div class="section-heading"><p class="section-label">Payoff strategy</p><span>Optional</span></div>
+            <div class="control-list" id="extraControls"></div>
+          </div>
+
+          <label class="toggle-row">
+            <input id="autoSave" type="checkbox" checked>
+            <span>Save changes automatically</span>
+          </label>
+        </aside>
+
+        <section class="results" aria-label="Loan results">
+          <div class="metric-grid">
+            <article class="metric highlight"><span>Monthly payment</span><strong id="monthlyPayment">$0</strong><small>Principal & interest</small></article>
+            <article class="metric"><span>Payoff date</span><strong id="payoffDate">—</strong><small id="payoffDuration">—</small></article>
+            <article class="metric"><span>Total interest</span><strong id="totalInterest">$0</strong><small id="interestNote">Over the life of the loan</small></article>
+            <article class="metric"><span>Interest saved</span><strong id="interestSaved">$0</strong><small id="savedNote">With your strategy</small></article>
+          </div>
+
+          <div class="insight-strip">
+            <div class="insight-mark">↗</div>
+            <p id="insightText">Add an extra payment to explore a faster payoff path.</p>
+          </div>
+
+          <div class="chart-shell">
+            <div class="chart-header">
+              <div><p class="eyebrow">Balance trajectory</p><h2>Your remaining balance</h2></div>
+              <div class="chart-legend"><span><i class="gold-dot"></i>With strategy</span><span><i class="line-dot"></i>Standard payoff</span></div>
+            </div>
+            <canvas id="balanceChart" width="1100" height="470" aria-label="Remaining balance chart"></canvas>
+          </div>
+
+          <div class="table-shell">
+            <div class="chart-header table-header">
+              <div><p class="eyebrow">Payment ledger</p><h2>Monthly amortization schedule</h2></div>
+              <div class="table-actions">
+                <select id="yearFilter" aria-label="Show year"></select>
+                <button id="downloadButton" type="button">Download CSV</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Payment</th><th>Date</th><th>Principal</th><th>Interest</th><th>Extra</th><th>Balance</th></tr></thead>
+                <tbody id="scheduleRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
