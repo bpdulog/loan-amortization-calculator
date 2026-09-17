@@ -5,16 +5,17 @@ const PRESETS = {
   auto: { amount: 34000, rate: 6.1, term: 6, extra: 50, extraStart: 1 },
   personal: { amount: 18000, rate: 10.5, term: 5, extra: 75, extraStart: 1 }
 };
-const DEFAULTS = { loanType: "home", amount: 420000, rate: 6.5, term: 30, extra: 150, extraStart: 1, startDate: "2026-09", autoSave: true, yearFilter: "all" };
+const DEFAULTS = { loanType: "home", amount: 420000, rate: 6.5, term: 30, extra: 150, extraStart: 1, startDate: "2026-09", autoSave: true, yearFilter: "all", investReturn: 7, taxRate: 15 };
 const DEFINITIONS = {
   loan: [["amount", "Loan amount", "currency", 1000, 1500000, 1000], ["rate", "Interest rate", "percent", 0, 20, 0.05], ["term", "Loan term", "years", 1, 40, 1]],
-  extra: [["extra", "Extra monthly payment", "currency", 0, 5000, 25], ["extraStart", "Start extra payment in month", "number", 1, 480, 1]]
+  extra: [["extra", "Extra monthly payment", "currency", 0, 5000, 25], ["extraStart", "Start extra payment in month", "number", 1, 480, 1]],
+  invest: [["investReturn", "Expected annual return", "percent", 0, 15, 0.25], ["taxRate", "Capital gains tax rate", "percent", 0, 40, 1]]
 };
 const state = loadState();
 let currentPlan = [], standardPlan = [];
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const loanControls = document.querySelector("#loanControls"), extraControls = document.querySelector("#extraControls"), scheduleRows = document.querySelector("#scheduleRows"), yearFilter = document.querySelector("#yearFilter"), canvas = document.querySelector("#balanceChart"), ctx = canvas.getContext("2d");
+const loanControls = document.querySelector("#loanControls"), extraControls = document.querySelector("#extraControls"), investControls = document.querySelector("#investControls"), investBlock = document.querySelector("#investBlock"), tradeoffSection = document.querySelector("#tradeoffSection"), scheduleRows = document.querySelector("#scheduleRows"), yearFilter = document.querySelector("#yearFilter"), canvas = document.querySelector("#balanceChart"), ctx = canvas.getContext("2d");
 
 function loadState() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY)) }; } catch { return { ...DEFAULTS }; } }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -39,8 +40,55 @@ function amortize(includeExtra) {
   return { rows, regular };
 }
 function controls(target, defs) { target.innerHTML = defs.map(([key,label,type,min,max,step]) => `<div class="control"><div class="control-head"><label for="${key}">${label}</label><input id="${key}" type="number" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${state[key]}"></div><input type="range" data-key="${key}" aria-label="${label}" min="${min}" max="${max}" step="${step}" value="${state[key]}"><div class="range-labels"><span>${scale(min,type)}</span><span>${scale(max,type)}</span></div></div>`).join(""); }
-function renderControls() { controls(loanControls, DEFINITIONS.loan); controls(extraControls, DEFINITIONS.extra); }
+function renderControls() { controls(loanControls, DEFINITIONS.loan); controls(extraControls, DEFINITIONS.extra); controls(investControls, DEFINITIONS.invest); }
 function monthsLabel(months) { const years = Math.floor(months / 12), rest = months % 12; return `${years ? `${years} yr${years === 1 ? "" : "s"}` : ""}${years && rest ? " " : ""}${rest ? `${rest} mo` : ""}`; }
+function investSnapshot(months) {
+  const monthlyGrowth = Math.pow(1 + state.investReturn / 100, 1 / 12) - 1, taxRate = state.taxRate / 100;
+  let portfolio = 0, basis = 0;
+  for (let m = 1; m <= months; m += 1) {
+    if (m >= state.extraStart) { portfolio += state.extra; basis += state.extra; }
+    portfolio *= 1 + monthlyGrowth;
+  }
+  const taxes = taxRate * Math.max(0, portfolio - basis);
+  return { portfolio, taxes, net: portfolio - taxes };
+}
+function investmentTradeoff() {
+  for (let m = 1; m <= standardPlan.length; m += 1) {
+    const account = investSnapshot(m), balance = standardPlan[m - 1].balance;
+    if (account.net >= balance) return { month: m, date: dateForPayment(m), balance, leftover: account.net - balance, ...account };
+  }
+  const account = investSnapshot(standardPlan.length);
+  return { month: standardPlan.length, date: dateForPayment(standardPlan.length), balance: 0, leftover: account.net, ...account };
+}
+function renderTradeoff() {
+  investBlock.hidden = tradeoffSection.hidden = !(state.extra > 0);
+  if (!state.extra) return;
+  const paydownMonths = currentPlan.length, paydownInterest = currentPlan.reduce((sum, row) => sum + row.interest, 0);
+  const standardMonths = standardPlan.length;
+  const invest = investmentTradeoff();
+  const paydownSooner = standardMonths - paydownMonths, investSooner = standardMonths - invest.month, difference = paydownMonths - invest.month;
+  document.querySelector("#paydownPayoff").textContent = `${monthsLabel(paydownMonths)} to payoff`;
+  document.querySelector("#paydownSooner").textContent = paydownSooner ? `${monthsLabel(paydownSooner)} sooner than standard` : "Standard schedule";
+  document.querySelector("#paydownInterest").textContent = money(paydownInterest);
+  document.querySelector("#paydownDate").textContent = fmtDate(currentPlan.at(-1).date);
+  document.querySelector("#investPayoff").textContent = `${monthsLabel(invest.month)} to payoff`;
+  document.querySelector("#investSooner").textContent = investSooner ? `${monthsLabel(investSooner)} sooner than standard` : "Standard schedule";
+  document.querySelector("#investPortfolio").textContent = money(invest.net);
+  document.querySelector("#investTax").textContent = `−${money(invest.taxes)}`;
+  document.querySelector("#investLeftover").textContent = money(invest.leftover);
+  document.querySelector("#tradeoffNote").textContent = `${money(state.extra)}/mo invested at ${state.investReturn}% annual growth, ${state.taxRate}% tax on gains`;
+  const balanceAtPaydown = standardPlan[paydownMonths - 1] ? standardPlan[paydownMonths - 1].balance : 0;
+  const position = investSnapshot(paydownMonths).net - balanceAtPaydown;
+  const speed = difference > 0
+    ? `Investing clears the loan ${monthsLabel(difference)} sooner than extra principal, leaving ${money(invest.leftover)} after the balance is retired.`
+    : difference < 0
+      ? `Extra principal clears the loan ${monthsLabel(-difference)} sooner than investing, avoiding ${money(invest.taxes)} in capital gains tax.`
+      : `Both paths retire the loan in the same month; investing leaves ${money(invest.leftover)} after tax.`;
+  const standing = position >= 0
+    ? `At month ${paydownMonths} — when the extra-principal plan is done — the portfolio nets ${money(investSnapshot(paydownMonths).net)} after tax while ${money(balanceAtPaydown)} of the loan would remain, so investing is ahead by ${money(position)}.`
+    : `At month ${paydownMonths} — when the extra-principal plan is done — the portfolio nets ${money(investSnapshot(paydownMonths).net)} after tax against ${money(balanceAtPaydown)} of remaining balance, so the paydown is ahead by ${money(-position)}.`;
+  document.querySelector("#tradeoffVerdict").textContent = `${speed} ${standing}`;
+}
 function render() {
   const withStrategy = amortize(true), standard = amortize(false); currentPlan = withStrategy.rows; standardPlan = standard.rows;
   const totalInterest = currentPlan.reduce((sum, row) => sum + row.interest, 0), standardInterest = standardPlan.reduce((sum, row) => sum + row.interest, 0);
@@ -53,7 +101,7 @@ function render() {
   document.querySelector("#interestNote").textContent = state.extra ? `vs. ${money(standardInterest)} standard` : "Over the life of the loan";
   document.querySelector("#savedNote").textContent = monthsSaved ? `${monthsLabel(monthsSaved)} sooner` : "Keep exploring";
   document.querySelector("#insightText").textContent = state.extra ? `Your ${money(state.extra)} monthly extra starts in month ${state.extraStart} and could clear the loan ${monthsLabel(monthsSaved)} earlier.` : "Add an extra monthly payment to see how much interest and time you can save.";
-  renderYearFilter(); renderTable(); drawChart(); if (state.autoSave) saveState();
+  renderYearFilter(); renderTable(); drawChart(); renderTradeoff(); if (state.autoSave) saveState();
 }
 function renderYearFilter() { const prior = state.yearFilter; const years = [...new Set(currentPlan.map(row => row.date.getFullYear()))]; yearFilter.innerHTML = `<option value="all">All payments</option>${years.map(year => `<option value="${year}">${year}</option>`).join("")}`; state.yearFilter = years.includes(Number(prior)) ? prior : "all"; yearFilter.value = state.yearFilter; }
 function renderTable() { const rows = state.yearFilter === "all" ? currentPlan : currentPlan.filter(row => row.date.getFullYear() === Number(state.yearFilter)); scheduleRows.innerHTML = rows.map(row => `<tr><td>${row.payment}</td><td>${fmtDate(row.date)}</td><td>${cents.format(row.principal)}</td><td>${cents.format(row.interest)}</td><td>${row.extra ? cents.format(row.extra) : "—"}</td><td>${cents.format(row.balance)}</td></tr>`).join("") || `<tr><td colspan="6">No payments in this year.</td></tr>`; }

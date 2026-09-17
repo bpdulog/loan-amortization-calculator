@@ -45,6 +45,10 @@
           <div class="control-section extra-section">
             <div class="section-heading"><p class="section-label">Payoff strategy</p><span>Optional</span></div>
             <div class="control-list" id="extraControls"></div>
+            <div class="invest-block" id="investBlock" hidden>
+              <p class="section-label invest-label">Investment assumptions</p>
+              <div class="control-list" id="investControls"></div>
+            </div>
           </div>
 
           <label class="toggle-row">
@@ -73,6 +77,35 @@
             </div>
             <canvas id="balanceChart" width="1100" height="470" aria-label="Remaining balance chart"></canvas>
           </div>
+
+          <section class="tradeoff-shell" id="tradeoffSection" hidden aria-label="Extra payment tradeoff">
+            <div class="chart-header">
+              <div><p class="eyebrow">Extra payment tradeoff</p><h2>Pay down vs. invest the difference</h2></div>
+              <p class="tradeoff-note" id="tradeoffNote"></p>
+            </div>
+            <div class="tradeoff-grid">
+              <article class="tradeoff-card">
+                <span class="tradeoff-tag">Extra principal</span>
+                <strong id="paydownPayoff">—</strong>
+                <small id="paydownSooner">—</small>
+                <ul class="tradeoff-list">
+                  <li><span>Total interest</span><b id="paydownInterest">—</b></li>
+                  <li><span>Payoff date</span><b id="paydownDate">—</b></li>
+                </ul>
+              </article>
+              <article class="tradeoff-card">
+                <span class="tradeoff-tag">Invest the extra</span>
+                <strong id="investPayoff">—</strong>
+                <small id="investSooner">—</small>
+                <ul class="tradeoff-list">
+                  <li><span>Net portfolio at payoff</span><b id="investPortfolio">—</b></li>
+                  <li><span>Taxes on gains</span><b id="investTax">—</b></li>
+                  <li><span>Left after paying off loan</span><b id="investLeftover">—</b></li>
+                </ul>
+              </article>
+            </div>
+            <p class="tradeoff-verdict" id="tradeoffVerdict"></p>
+          </section>
 
           <div class="table-shell">
             <div class="chart-header table-header">
