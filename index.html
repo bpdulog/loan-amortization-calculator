@@ -73,7 +73,11 @@
           <div class="chart-shell">
             <div class="chart-header">
               <div><p class="eyebrow">Balance trajectory</p><h2>Your remaining balance</h2></div>
-              <div class="chart-legend"><span><i class="gold-dot"></i>With strategy</span><span><i class="line-dot"></i>Standard payoff</span></div>
+              <div class="chart-legend">
+                <span><i class="gold-dot"></i>With strategy</span>
+                <span><i class="line-dot"></i>Standard payoff</span>
+                <span id="investLegend" hidden><i class="purple-dot"></i>Investing scenario</span>
+              </div>
             </div>
             <canvas id="balanceChart" width="1100" height="470" aria-label="Remaining balance chart"></canvas>
           </div>

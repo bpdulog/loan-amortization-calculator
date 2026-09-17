@@ -60,8 +60,26 @@ function investmentTradeoff() {
   const account = investSnapshot(standardPlan.length);
   return { month: standardPlan.length, date: dateForPayment(standardPlan.length), balance: 0, leftover: account.net, ...account };
 }
+function getInvestPlan() {
+  if (!state.extra || standardPlan.length === 0) return [];
+  const monthlyGrowth = Math.pow(1 + state.investReturn / 100, 1 / 12) - 1, taxRate = state.taxRate / 100;
+  let portfolio = 0, basis = 0;
+  const rows = [];
+  for (let m = 1; m <= standardPlan.length; m += 1) {
+    if (m >= state.extraStart) { portfolio += state.extra; basis += state.extra; }
+    portfolio *= 1 + monthlyGrowth;
+    const taxes = taxRate * Math.max(0, portfolio - basis), netPortfolio = portfolio - taxes;
+    const stdBalance = standardPlan[m - 1].balance;
+    const netBalance = Math.max(0, stdBalance - netPortfolio);
+    rows.push({ payment: m, date: dateForPayment(m), balance: netBalance });
+    if (netPortfolio >= stdBalance) break;
+  }
+  return rows;
+}
 function renderTradeoff() {
   investBlock.hidden = tradeoffSection.hidden = !(state.extra > 0);
+  const investLegend = document.querySelector("#investLegend");
+  if (investLegend) investLegend.hidden = !(state.extra > 0);
   if (!state.extra) return;
   const paydownMonths = currentPlan.length, paydownInterest = currentPlan.reduce((sum, row) => sum + row.interest, 0);
   const standardMonths = standardPlan.length;
@@ -108,12 +126,15 @@ function renderTable() { const rows = state.yearFilter === "all" ? currentPlan :
 function drawChart() {
   const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, width = Math.max(640, Math.floor(rect.width * dpr)) / dpr, height = Math.max(320, Math.floor(rect.height * dpr)) / dpr;
   canvas.width = width * dpr; canvas.height = height * dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height); ctx.fillStyle="#0c1110"; ctx.fillRect(0,0,width,height);
-  const pad={top:25,right:25,bottom:38,left:73}, pw=width-pad.left-pad.right, ph=height-pad.top-pad.bottom, max=Math.max(state.amount,1), length=Math.max(standardPlan.length,currentPlan.length);
+  const investPlan = getInvestPlan();
+  const pad={top:25,right:25,bottom:38,left:73}, pw=width-pad.left-pad.right, ph=height-pad.top-pad.bottom, max=Math.max(state.amount,1), length=Math.max(standardPlan.length,currentPlan.length,investPlan.length||1);
   ctx.strokeStyle="rgba(231,215,168,.14)"; ctx.lineWidth=1; ctx.fillStyle="#b8b2a2"; ctx.font="700 12px Inter, system-ui"; ctx.textAlign="right"; ctx.textBaseline="middle";
   for(let i=0;i<=4;i++){ const y=pad.top+ph*i/4, value=max*(1-i/4); ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(width-pad.right,y);ctx.stroke();ctx.fillText(shortMoney(value),pad.left-12,y); }
   const points=rows=>[{x:pad.left,y:pad.top},...rows.map((r,i)=>({x:pad.left+pw*(i+1)/length,y:pad.top+ph*(1-r.balance/max)}))];
   const line=(rows,color,dash,fill)=>{const pts=points(rows); if(fill){const grad=ctx.createLinearGradient(0,pad.top,0,height-pad.bottom);grad.addColorStop(0,"rgba(216,180,95,.32)");grad.addColorStop(1,"rgba(216,180,95,.015)");ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.lineTo(pts.at(-1).x,height-pad.bottom);ctx.lineTo(pad.left,height-pad.bottom);ctx.closePath();ctx.fillStyle=grad;ctx.fill();}ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.strokeStyle=color;ctx.setLineDash(dash);ctx.lineWidth=2.6;ctx.stroke();ctx.setLineDash([]);};
-  line(standardPlan,"rgba(45,212,191,.72)",[7,6],false); line(currentPlan,"#d8b45f",[],true);
+  line(standardPlan,"rgba(45,212,191,.72)",[7,6],false);
+  line(currentPlan,"#d8b45f",[],true);
+  if (investPlan.length > 0) line(investPlan, "#a78bfa", [5, 4], false);
   ctx.fillStyle="#b8b2a2";ctx.textAlign="center";ctx.textBaseline="top";for(let i=0;i<=5;i++){const index=Math.min(length-1,Math.round(length*i/5));ctx.fillText(`M${index}`,pad.left+pw*index/length,height-pad.bottom+13);}
 }
 function shortMoney(value) { return value >= 1000000 ? `$${(value/1000000).toFixed(1)}M` : value >= 1000 ? `$${Math.round(value/1000)}K` : money(value); }
