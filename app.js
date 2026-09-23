@@ -237,6 +237,9 @@ function rangeLabel(index, length) {
 }
 function render() {
   const card = state.loanType === "card", strategy = { scheduled: card ? 0 : strategyPayment(false) };
+  state.cardPaymentMode = state.cardPaymentMode === "total" ? "total" : "extra";
+  document.querySelector("#cardPaymentModeWrap").hidden = !card;
+  document.querySelector("#cardPaymentMode").value = state.cardPaymentMode;
   const withExtra = amortize(strategy, card ? state.cardExtra : state.extra), standard = amortize(strategy, 0);
   currentPlan = withExtra.rows; standardPlan = standard.rows;
   const totalInterest = currentPlan.reduce((sum, row) => sum + row.interest, 0), standardInterest = standardPlan.reduce((sum, row) => sum + row.interest, 0);
