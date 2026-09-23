@@ -53,6 +53,13 @@
 
           <div class="control-section extra-section">
             <div class="section-heading"><p class="section-label">Payoff strategy</p><span>Optional</span></div>
+            <label class="date-control card-payment-mode" id="cardPaymentModeWrap" for="cardPaymentMode" hidden>
+              <span>Card payment option</span>
+              <select id="cardPaymentMode">
+                <option value="extra">Extra on top of minimum</option>
+                <option value="total">Total payment including minimum</option>
+              </select>
+            </label>
             <div class="control-list" id="extraControls"></div>
             <p class="control-note" id="extraNote">The extra amount is a monthly budget, spread across the selected payment cadence.</p>
             <div class="invest-block" id="investBlock" hidden>
@@ -140,6 +147,6 @@
         </section>
       </section>
     </main>
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
   </body>
 </html>

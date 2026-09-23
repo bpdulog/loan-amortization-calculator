@@ -36,3 +36,4 @@ button,input,select { font:inherit; } button { border:0; cursor:pointer; }
 @media (max-width:640px) { .tradeoff-grid { grid-template-columns:1fr; } .tradeoff-note { text-align:left; } }
 .control-note { margin:10px 0 0; color:var(--muted); font-size:.76rem; line-height:1.45; }
 table { min-width:850px; }
+.card-payment-mode[hidden] { display:none; }
