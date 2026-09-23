@@ -100,7 +100,7 @@ function amortize(strategy, extra) { return state.loanType === "card" ? payoffCa
 
 function controls(target, defs) { target.innerHTML = defs.map(([key,label,type,min,max,step]) => `<div class="control"><div class="control-head"><label for="${key}">${label}</label><input id="${key}" type="number" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${state[key]}"></div><input type="range" data-key="${key}" aria-label="${label}" min="${min}" max="${max}" step="${step}" value="${state[key]}"><div class="range-labels"><span>${scale(min,type)}</span><span>${scale(max,type)}</span></div></div>`).join(""); }
 function activeDefinitions() { return DEFINITIONS[state.loanType] || DEFINITIONS.loan; }
-function renderControls() { controls(loanControls, activeDefinitions()); controls(extraControls, state.loanType === "card" ? [["cardExtra", `Extra principal per ${periodLabel()}`, "currency", 0, 1000, 5]] : DEFINITIONS.extra); controls(investControls, DEFINITIONS.invest); }
+function renderControls() { controls(loanControls, activeDefinitions()); controls(extraControls, state.loanType === "card" ? [["cardExtra", `Recurring extra principal per ${periodLabel()}`, "currency", 0, 1000, 5]] : DEFINITIONS.extra); controls(investControls, DEFINITIONS.invest); }
 function monthsLabel(months) { const years = Math.floor(months / 12), rest = months % 12; return `${years ? `${years} yr${years === 1 ? "" : "s"}` : ""}${years && rest ? " " : ""}${rest ? `${rest} mo` : ""}`; }
 function monthsFromPeriods(periods) { return periods * periodDays() / 30.44; }
 function investSnapshot(months) {
@@ -197,6 +197,7 @@ function cadenceAdverb() { return state.frequency === "daily" ? "daily" : state.
 function cardElapsedDays(rows) { return rows.length ? Math.max(0, daysBetween(startDateDate(), rows.at(-1).date)) : 0; }
 function cardDurationLabel(rows) { const days = cardElapsedDays(rows); return days < 30 ? `${days} day${days === 1 ? "" : "s"}` : monthsLabel(Math.max(1, Math.round(days / 30.44))); }
 function cardSavedLabel(days) { return days < 30 ? `${days} day${days === 1 ? "" : "s"}` : monthsLabel(Math.round(days / 30.44)); }
+function monthlyCardRows(rows) { const months = new Map(); rows.forEach(row => months.set(`${row.date.getFullYear()}-${row.date.getMonth()}`, row)); return [...months.values()]; }
 function rangeLabel(index, length) {
   if (state.frequency === "monthly") return `M${index}`;
   const date = dateForPayment(Math.min(Math.max(index + 1, 1), length));
@@ -211,10 +212,10 @@ function render() {
   const baseline = !card && state.frequency !== "monthly" ? sameOutlayMonthly(strategy.scheduled) : null;
   document.querySelector("#paymentMetricLabel").textContent = card ? "Est. monthly minimum" : "Monthly payment";
   document.querySelector("#monthlyPayment").textContent = card ? cents.format(minimumMonthlyPayment(state.amount)) : money(strategy.scheduled);
-  document.querySelector("#monthlyPaymentNote").textContent = card ? `Interest + 1% of balance (min $25); extra every ${periodLabel()}` : `Every ${periodLabel()}, principal & interest`;
+  document.querySelector("#monthlyPaymentNote").textContent = card ? `Interest + 1% of balance (min $25); recurring extra is ${cadenceAdverb()}` : `Every ${periodLabel()}, principal & interest`;
   document.querySelector("#startDateLabel").textContent = card ? "First monthly due date" : "First payment date";
   document.querySelector("#paymentFrequencyLabel").textContent = card ? "Extra payment cadence" : "Payment frequency";
-  document.querySelector("#extraNote").textContent = card ? "Minimum is due monthly. Each extra payment reduces principal on its payment date." : "The extra amount is a monthly budget, spread across the selected payment cadence.";
+  document.querySelector("#extraNote").textContent = card ? state.cardExtra ? `Minimum is due monthly. ${money(state.cardExtra)} goes directly to principal every ${periodLabel()}.` : "Minimum is due monthly. Set an extra amount to repeat it on the selected cadence; each extra payment goes to principal." : "The extra amount is a monthly budget, spread across the selected payment cadence.";
   document.querySelector("#payoffDate").textContent = fmtDate(currentPlan.at(-1).date);
   document.querySelector("#payoffDuration").textContent = `${card ? cardDurationLabel(currentPlan) : periodsLabel(currentPlan.length)} to payoff`;
   document.querySelector("#totalInterest").textContent = money(totalInterest);
@@ -235,6 +236,8 @@ function render() {
         : "Add an extra payment to see how much interest and time you can save.";
   document.querySelector("#strategyLegend").textContent = state.loanType === "card" ? "Minimum + extra" : "With strategy";
   document.querySelector("#standardLegend").textContent = state.loanType === "card" ? "Minimum only" : "Standard payoff";
+  document.querySelector("#chartEyebrow").textContent = card ? "Monthly balance" : "Balance trajectory";
+  document.querySelector("#chartTitle").textContent = card ? "Credit card balance by month" : "Your remaining balance";
   document.querySelector("#scheduledHeading").textContent = card ? "Minimum" : "Scheduled";
   document.querySelector("#scheduleTitle").textContent = card ? "Credit card payment schedule" : "Payment schedule";
   renderYearFilter(); renderTable(); drawChart(); renderTradeoff(); if (state.autoSave) saveState();
@@ -249,7 +252,7 @@ function drawChart() {
   const planMax=[currentPlan,standardPlan].reduce((outer,rows)=>Math.max(outer,rows.reduce((inner,row)=>Math.max(inner,row.balance),0)),state.amount), pad={top:25,right:25,bottom:38,left:73}, pw=width-pad.left-pad.right, ph=height-pad.top-pad.bottom, max=Math.max(planMax,1), length=card ? Math.max(1, daysBetween(chartStart, chartEnd)) : Math.max(standardPlan.length,currentPlan.length,investPlan.length||1);
   ctx.strokeStyle="rgba(231,215,168,.14)"; ctx.lineWidth=1; ctx.fillStyle="#b8b2a2"; ctx.font="700 12px Inter, system-ui"; ctx.textAlign="right"; ctx.textBaseline="middle";
   for(let i=0;i<=4;i++){ const y=pad.top+ph*i/4, value=max*(1-i/4); ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(width-pad.right,y);ctx.stroke();ctx.fillText(shortMoney(value),pad.left-12,y); }
-  const points=rows=>[{x:pad.left,y:pad.top+ph*(1-state.amount/max)},...rows.map((r,i)=>({x:pad.left+pw*(card ? daysBetween(chartStart,r.date)/length : (i+1)/length),y:pad.top+ph*(1-r.balance/max)}))];
+  const points=rows=>{const plotted=card?monthlyCardRows(rows):rows;return [{x:pad.left,y:pad.top+ph*(1-state.amount/max)},...plotted.map((r,i)=>({x:pad.left+pw*(card ? daysBetween(chartStart,r.date)/length : (i+1)/length),y:pad.top+ph*(1-r.balance/max)}))];};
   const line=(rows,color,dash,fill)=>{const pts=points(rows); if(fill){const grad=ctx.createLinearGradient(0,pad.top,0,height-pad.bottom);grad.addColorStop(0,"rgba(216,180,95,.32)");grad.addColorStop(1,"rgba(216,180,95,.015)");ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.lineTo(pts.at(-1).x,height-pad.bottom);ctx.lineTo(pad.left,height-pad.bottom);ctx.closePath();ctx.fillStyle=grad;ctx.fill();}ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.strokeStyle=color;ctx.setLineDash(dash);ctx.lineWidth=2.6;ctx.stroke();ctx.setLineDash([]);};
   line(standardPlan,"rgba(45,212,191,.72)",[7,6],false);
   line(currentPlan,"#d8b45f",[],true);
