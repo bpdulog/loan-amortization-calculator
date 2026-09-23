@@ -38,11 +38,11 @@
             <p class="section-label">Loan details</p>
             <div class="control-list" id="loanControls"></div>
             <label class="date-control" for="startDate">
-              <span>First payment date</span>
+              <span id="startDateLabel">First payment date</span>
               <input id="startDate" type="date" value="2026-10-01">
             </label>
             <label class="date-control" for="paymentFrequency">
-              <span>Payment frequency</span>
+              <span id="paymentFrequencyLabel">Payment frequency</span>
               <select id="paymentFrequency">
                 <option value="monthly">Monthly</option>
                 <option value="weekly">Weekly</option>
@@ -54,7 +54,7 @@
           <div class="control-section extra-section">
             <div class="section-heading"><p class="section-label">Payoff strategy</p><span>Optional</span></div>
             <div class="control-list" id="extraControls"></div>
-            <p class="control-note">The extra amount is a monthly budget, spread across the selected payment cadence.</p>
+            <p class="control-note" id="extraNote">The extra amount is a monthly budget, spread across the selected payment cadence.</p>
             <div class="invest-block" id="investBlock" hidden>
               <p class="section-label invest-label">Investment assumptions</p>
               <div class="control-list" id="investControls"></div>
@@ -73,7 +73,7 @@
             <article class="metric"><span>Payoff date</span><strong id="payoffDate">—</strong><small id="payoffDuration">—</small></article>
             <article class="metric"><span>Total interest</span><strong id="totalInterest">$0</strong><small id="interestNote">Over the life of the loan</small></article>
             <article class="metric"><span>Interest saved</span><strong id="interestSaved">$0</strong><small id="savedNote">With your strategy</small></article>
-            <article class="metric"><span>Extra interest avoided</span><strong id="accrualSaved">$0</strong><small id="accrualNote">From paying more often</small></article>
+            <article class="metric"><span id="accrualLabel">Extra interest avoided</span><strong id="accrualSaved">$0</strong><small id="accrualNote">From paying more often</small></article>
           </div>
 
           <div class="insight-strip">
@@ -132,7 +132,7 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Payment</th><th>Date</th><th id="scheduledHeading">Scheduled</th><th>Total principal</th><th>Interest</th><th>Extra principal</th><th>Balance</th></tr></thead>
+                <thead><tr><th>Payment</th><th>Date</th><th id="scheduledHeading">Scheduled</th><th>Total principal</th><th>Interest accrued</th><th>Extra principal</th><th>Balance</th></tr></thead>
                 <tbody id="scheduleRows"></tbody>
               </table>
             </div>
@@ -140,6 +140,6 @@
         </section>
       </section>
     </main>
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>
