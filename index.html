@@ -31,14 +31,23 @@
             <button class="loan-type active" type="button" data-loan-type="home" role="tab" aria-selected="true">Home</button>
             <button class="loan-type" type="button" data-loan-type="auto" role="tab" aria-selected="false">Auto</button>
             <button class="loan-type" type="button" data-loan-type="personal" role="tab" aria-selected="false">Personal</button>
+            <button class="loan-type" type="button" data-loan-type="card" role="tab" aria-selected="false">Card</button>
           </div>
 
           <div class="control-section">
             <p class="section-label">Loan details</p>
             <div class="control-list" id="loanControls"></div>
             <label class="date-control" for="startDate">
-              <span>First payment month</span>
-              <input id="startDate" type="month" value="2026-09">
+              <span>First payment date</span>
+              <input id="startDate" type="date" value="2026-10-01">
+            </label>
+            <label class="date-control" for="paymentFrequency">
+              <span>Payment frequency</span>
+              <select id="paymentFrequency">
+                <option value="monthly">Monthly</option>
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+              </select>
             </label>
           </div>
 
@@ -59,10 +68,11 @@
 
         <section class="results" aria-label="Loan results">
           <div class="metric-grid">
-            <article class="metric highlight"><span>Monthly payment</span><strong id="monthlyPayment">$0</strong><small>Principal & interest</small></article>
+            <article class="metric highlight"><span>Monthly payment</span><strong id="monthlyPayment">$0</strong><small id="monthlyPaymentNote">Principal & interest</small></article>
             <article class="metric"><span>Payoff date</span><strong id="payoffDate">—</strong><small id="payoffDuration">—</small></article>
             <article class="metric"><span>Total interest</span><strong id="totalInterest">$0</strong><small id="interestNote">Over the life of the loan</small></article>
             <article class="metric"><span>Interest saved</span><strong id="interestSaved">$0</strong><small id="savedNote">With your strategy</small></article>
+            <article class="metric"><span>Extra interest avoided</span><strong id="accrualSaved">$0</strong><small id="accrualNote">From paying more often</small></article>
           </div>
 
           <div class="insight-strip">
