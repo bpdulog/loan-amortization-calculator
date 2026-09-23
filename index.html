@@ -54,6 +54,7 @@
           <div class="control-section extra-section">
             <div class="section-heading"><p class="section-label">Payoff strategy</p><span>Optional</span></div>
             <div class="control-list" id="extraControls"></div>
+            <p class="control-note">The extra amount is a monthly budget, spread across the selected payment cadence.</p>
             <div class="invest-block" id="investBlock" hidden>
               <p class="section-label invest-label">Investment assumptions</p>
               <div class="control-list" id="investControls"></div>
@@ -68,7 +69,7 @@
 
         <section class="results" aria-label="Loan results">
           <div class="metric-grid">
-            <article class="metric highlight"><span>Monthly payment</span><strong id="monthlyPayment">$0</strong><small id="monthlyPaymentNote">Principal & interest</small></article>
+            <article class="metric highlight"><span id="paymentMetricLabel">Monthly payment</span><strong id="monthlyPayment">$0</strong><small id="monthlyPaymentNote">Principal & interest</small></article>
             <article class="metric"><span>Payoff date</span><strong id="payoffDate">—</strong><small id="payoffDuration">—</small></article>
             <article class="metric"><span>Total interest</span><strong id="totalInterest">$0</strong><small id="interestNote">Over the life of the loan</small></article>
             <article class="metric"><span>Interest saved</span><strong id="interestSaved">$0</strong><small id="savedNote">With your strategy</small></article>
@@ -84,8 +85,8 @@
             <div class="chart-header">
               <div><p class="eyebrow">Balance trajectory</p><h2>Your remaining balance</h2></div>
               <div class="chart-legend">
-                <span><i class="gold-dot"></i>With strategy</span>
-                <span><i class="line-dot"></i>Standard payoff</span>
+                <span><i class="gold-dot"></i><span id="strategyLegend">With strategy</span></span>
+                <span><i class="line-dot"></i><span id="standardLegend">Standard payoff</span></span>
                 <span id="investLegend" hidden><i class="purple-dot"></i>Investing scenario</span>
               </div>
             </div>
@@ -123,7 +124,7 @@
 
           <div class="table-shell">
             <div class="chart-header table-header">
-              <div><p class="eyebrow">Payment ledger</p><h2>Monthly amortization schedule</h2></div>
+              <div><p class="eyebrow">Payment ledger</p><h2 id="scheduleTitle">Payment schedule</h2></div>
               <div class="table-actions">
                 <select id="yearFilter" aria-label="Show year"></select>
                 <button id="downloadButton" type="button">Download CSV</button>
@@ -131,7 +132,7 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Payment</th><th>Date</th><th>Principal</th><th>Interest</th><th>Extra</th><th>Balance</th></tr></thead>
+                <thead><tr><th>Payment</th><th>Date</th><th id="scheduledHeading">Scheduled</th><th>Total principal</th><th>Interest</th><th>Extra principal</th><th>Balance</th></tr></thead>
                 <tbody id="scheduleRows"></tbody>
               </table>
             </div>

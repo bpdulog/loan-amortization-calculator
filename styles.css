@@ -34,3 +34,5 @@ button,input,select { font:inherit; } button { border:0; cursor:pointer; }
 .tradeoff-list b { color:var(--cream); font-weight:800; }
 .tradeoff-verdict { margin:16px 0 0; padding:13px 15px; color:var(--cream); border:1px solid rgba(231,215,168,.16); border-radius:8px; background:linear-gradient(90deg,rgba(216,180,95,.13),rgba(45,212,191,.09)); font-size:.9rem; font-weight:700; line-height:1.55; }
 @media (max-width:640px) { .tradeoff-grid { grid-template-columns:1fr; } .tradeoff-note { text-align:left; } }
+.control-note { margin:10px 0 0; color:var(--muted); font-size:.76rem; line-height:1.45; }
+table { min-width:850px; }
