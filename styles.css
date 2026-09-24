@@ -39,3 +39,8 @@ table { min-width:850px; }
 .card-payment-mode:not([hidden]) { align-items:stretch; flex-direction:column; gap:8px; }
 .card-payment-mode select { width:100%; min-width:0; max-width:100%; }
 .card-payment-mode[hidden] { display:none; }
+
+.card-spend-list { margin-top:14px; }
+.card-spend-list[hidden] { display:none; }
+.card-spend-list .control.is-disabled { opacity:.45; }
+.card-spend-list .control.is-disabled input { pointer-events:none; }

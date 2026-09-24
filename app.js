@@ -4,21 +4,23 @@ const PRESETS = {
   home: { amount: 420000, rate: 6.5, term: 30, extra: 150, extraStart: 1, frequency: "monthly" },
   auto: { amount: 34000, rate: 6.1, term: 6, extra: 50, extraStart: 1, frequency: "monthly" },
   personal: { amount: 18000, rate: 10.5, term: 5, extra: 75, extraStart: 1, frequency: "monthly" },
-  card: { amount: 6200, rate: 22.9, cardExtra: 15, cardPaymentMode: "extra", extraStart: 1, frequency: "weekly" }
+  card: { amount: 6200, rate: 22.9, cardExtra: 15, cardPaymentMode: "extra", extraStart: 1, frequency: "weekly", cardSpend: 900, cardSpendMode: "payInFull" }
 };
-const DEFAULTS = { loanType: "home", amount: 420000, rate: 6.5, term: 30, extra: 150, cardExtra: 15, cardPaymentMode: "extra", extraStart: 1, startDate: "2026-10-01", frequency: "monthly", autoSave: true, yearFilter: "all", investReturn: 7, taxRate: 15 };
+const DEFAULTS = { loanType: "home", amount: 420000, rate: 6.5, term: 30, extra: 150, cardExtra: 15, cardPaymentMode: "extra", extraStart: 1, startDate: "2026-10-01", frequency: "monthly", autoSave: true, yearFilter: "all", investReturn: 7, taxRate: 15, cardSpend: 0, cardSpendMode: "stop" };
+const CARD_SPEND_MODES = { payInFull: "I pay new charges in full", fixed: "I keep charging a fixed amount", stop: "I stop using the card" };
 const PERIODS = { monthly: { days: 30, label: "month" }, weekly: { days: 7, label: "week" }, daily: { days: 1, label: "day" } };
 const DEFINITIONS = {
   loan: [["amount", "Loan amount", "currency", 1000, 1500000, 1000], ["rate", "Interest rate", "percent", 0, 30, 0.05], ["term", "Loan term", "years", 1, 40, 1]],
   card: [["amount", "Card balance", "currency", 500, 50000, 100], ["rate", "APR", "percent", 0, 36, 0.05]],
   extra: [["extra", "Extra per month", "currency", 0, 5000, 25]],
-  invest: [["investReturn", "Expected annual return", "percent", 0, 15, 0.25], ["taxRate", "Capital gains tax rate", "percent", 0, 40, 1]]
+  invest: [["investReturn", "Expected annual return", "percent", 0, 15, 0.25], ["taxRate", "Capital gains tax rate", "percent", 0, 40, 1]],
+  cardSpend: [["cardSpend", "New charges per month", "currency", 0, 10000, 50]]
 };
 const state = loadState();
-let currentPlan = [], standardPlan = [];
+let currentPlan = [], standardPlan = [], plan = { withExtra: null, standard: null };
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const loanControls = document.querySelector("#loanControls"), extraControls = document.querySelector("#extraControls"), investControls = document.querySelector("#investControls"), investBlock = document.querySelector("#investBlock"), tradeoffSection = document.querySelector("#tradeoffSection"), scheduleRows = document.querySelector("#scheduleRows"), yearFilter = document.querySelector("#yearFilter"), frequencySelect = document.querySelector("#paymentFrequency"), canvas = document.querySelector("#balanceChart"), ctx = canvas.getContext("2d");
+const cardSpendControls = document.querySelector("#cardSpendControls"), cardSpendModeWrap = document.querySelector("#cardSpendModeWrap"), cardSpendSelect = document.querySelector("#cardSpendMode"), loanControls = document.querySelector("#loanControls"), extraControls = document.querySelector("#extraControls"), investControls = document.querySelector("#investControls"), investBlock = document.querySelector("#investBlock"), tradeoffSection = document.querySelector("#tradeoffSection"), scheduleRows = document.querySelector("#scheduleRows"), yearFilter = document.querySelector("#yearFilter"), frequencySelect = document.querySelector("#paymentFrequency"), canvas = document.querySelector("#balanceChart"), ctx = canvas.getContext("2d");
 
 function loadState() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY)) }; } catch { return { ...DEFAULTS }; } }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -74,29 +76,57 @@ function payoffWithPayment(strategy, payment, extra) {
   }
   return { rows, scheduled: payment, periodsPerMonth, accrued };
 }
+// New charges are a monthly figure, prorated to the payment cadence the same way the extra is.
+function cardSpendPerPeriod() {
+  if (state.loanType !== "card" || state.cardSpendMode === "stop" || !state.cardSpend) return 0;
+  return state.cardSpend * 12 / periodsPerYear();
+}
+// Statement charges accrue on the same dated schedule as the minimum, so they are injected as a
+// monthly event rather than a per-loop addition. Pay-in-full clears them when the statement lands.
 function payoffCard(extra) {
   const anchor = startDateDate(), firstPeriodDays = daysBetween(addCalendarMonths(anchor, -1), anchor), cadenceDays = periodDays();
-  let balance = state.amount, accruedInterest = balance * dailyRate() * firstPeriodDays, eventInterest = accruedInterest, extraDate = extra > 0 ? anchor : null, minimumIndex = 0, minimumDate = anchor, count = 0, accrued = accruedInterest;
+  const spend = cardSpendPerPeriod(), payInFull = state.cardSpendMode === "payInFull";
+  let balance = state.amount, accruedInterest = balance * dailyRate() * firstPeriodDays, eventInterest = accruedInterest, extraDate = extra > 0 ? anchor : null, minimumIndex = 0, minimumDate = anchor, count = 0, accrued = accruedInterest, spent = 0;
   const rows = [];
+  // Without new charges the balance can still fail to clear on a minimum-only plan; with them it
+  // usually does. Either way, report it rather than running to the loop cap silently.
+  const divergingLimit = state.amount * 4;
+  let diverging = false, flat = false;
   while (balance > 0.005 && count < 50000) {
     const date = extraDate && extraDate <= minimumDate ? extraDate : minimumDate, extraDue = Boolean(extraDate && date.getTime() === extraDate.getTime()), minimumDue = date.getTime() === minimumDate.getTime();
     if (count > 0) { const interest = balance * dailyRate() * daysBetween(rows.at(-1).date, date); accruedInterest += interest; eventInterest = interest; accrued += interest; }
-    const minimum = minimumDue ? Math.min(balance + accruedInterest, accruedInterest + minPaymentFor(balance)) : 0;
+    const previous = balance + accruedInterest;
+    // New charges land with the statement, before the payment for that period is calculated, so a
+    // pay-in-full user actually clears them instead of letting them roll into the balance.
+    const charges = minimumDue ? spend : 0;
+    balance = Math.max(0, balance + charges);
+    spent += charges;
+    const owed = balance + accruedInterest;
+    // Paying the statement in full clears this period's charges plus the interest they accrued.
+    // Anything less lets them revolve, which is exactly the trap the spending model exists to show.
+    const fullTarget = payInFull ? Math.min(owed, charges + accruedInterest) : 0;
+    const minimum = minimumDue ? Math.max(Math.min(owed, accruedInterest + minPaymentFor(balance)), fullTarget) : 0;
     const minimumPrincipal = Math.min(balance, Math.max(0, minimum - accruedInterest));
     balance = Math.max(0, balance - minimumPrincipal); accruedInterest = Math.max(0, accruedInterest - minimum);
     const extraPaid = extraDue ? Math.min(extra, balance) : 0;
     balance = Math.max(0, balance - extraPaid);
-    const payoffInterest = balance <= 0.005 ? accruedInterest : 0, scheduled = minimum + payoffInterest;
+    const payoffInterest = balance <= 0.005 && accruedInterest > 0 ? accruedInterest : 0, scheduled = minimum + payoffInterest;
     if (payoffInterest) accruedInterest = 0;
-    rows.push({ payment: ++count, date, scheduled, principal: minimumPrincipal + extraPaid, interest: eventInterest, extra: extraPaid, balance: balance + accruedInterest, accrued });
+    const shown = balance + accruedInterest;
+    if (shown > previous + 0.005) diverging = true;
+    if (Math.abs(shown - previous) <= 0.005 && shown > 0.005) flat = true;
+    rows.push({ payment: ++count, date, scheduled, principal: minimumPrincipal + extraPaid, interest: eventInterest, extra: extraPaid, charges, balance: shown, accrued, spent });
     if (minimumDue) { minimumIndex += 1; minimumDate = addCalendarMonths(anchor, minimumIndex); }
     if (extraDue) extraDate = state.frequency === "monthly" ? minimumDate : addDays(extraDate, cadenceDays);
     if (extraDue && state.frequency === "monthly" && minimumDue) extraDate = minimumDate;
+    if (shown >= divergingLimit || (diverging && count >= 360) || (flat && count >= 360)) break;
   }
-  return { rows, scheduled: minimumMonthlyPayment(state.amount), accrued };
+  const settled = balance + accruedInterest <= 0.005;
+  return { rows, scheduled: minimumMonthlyPayment(state.amount), accrued, spent, diverging, flat: flat && !diverging, settled, truncated: !settled };
 }
 function payoffCardTotal(totalPayment) {
   const anchor = startDateDate(), firstPeriodDays = daysBetween(addCalendarMonths(anchor, -1), anchor), cadenceDays = periodDays();
+  let diverging = false;
   let balance = state.amount, accruedInterest = balance * dailyRate() * firstPeriodDays, eventInterest = accruedInterest, paymentDate = totalPayment > 0 ? anchor : null, minimumDate = anchor, minimumIndex = 0, minimumRemaining = Math.min(balance + accruedInterest, accruedInterest + minPaymentFor(balance)), count = 0, accrued = accruedInterest;
   const rows = [];
   while (balance > 0.005 && count < 50000) {
@@ -116,7 +146,10 @@ function payoffCardTotal(totalPayment) {
       const shortfall = applyPayment(minimumRemaining); scheduled += shortfall; minimumRemaining = Math.max(0, minimumRemaining - shortfall);
     }
     if (balance <= 0.005 && accruedInterest > 0) { scheduled += accruedInterest; accruedInterest = 0; }
-    rows.push({ payment: ++count, date, scheduled, principal, interest: eventInterest, extra: extraPaid, balance: balance + accruedInterest, accrued });
+    const shown = balance + accruedInterest;
+    if (count > 1 && shown > (rows.at(-1).balance ?? shown) + 0.005) diverging = true;
+    rows.push({ payment: ++count, date, scheduled, principal, interest: eventInterest, extra: extraPaid, balance: shown, accrued });
+    if (shown >= state.amount * 4 || (diverging && count >= 360)) break;
     if (minimumDue) {
       minimumIndex += 1; minimumDate = addCalendarMonths(anchor, minimumIndex);
       const cycleDays = daysBetween(date, minimumDate);
@@ -124,14 +157,35 @@ function payoffCardTotal(totalPayment) {
     }
     if (paymentDue) paymentDate = state.frequency === "monthly" ? minimumDate : addDays(paymentDate, cadenceDays);
   }
-  return { rows, scheduled: minimumMonthlyPayment(state.amount), accrued };
+  const settled = balance + accruedInterest <= 0.005;
+  return { rows, scheduled: minimumMonthlyPayment(state.amount), accrued, spent: 0, diverging, flat: false, settled, truncated: !settled };
 }
 function amortize(strategy, extra) { return state.loanType === "card" ? state.cardPaymentMode === "total" && extra > 0 ? payoffCardTotal(extra) : payoffCard(extra) : payoffWithPayment(strategy, strategy.scheduled, extra); }
 
 
 function controls(target, defs) { target.innerHTML = defs.map(([key,label,type,min,max,step]) => `<div class="control"><div class="control-head"><label for="${key}">${label}</label><input id="${key}" type="number" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${state[key]}"></div><input type="range" data-key="${key}" aria-label="${label}" min="${min}" max="${max}" step="${step}" value="${state[key]}"><div class="range-labels"><span>${scale(min,type)}</span><span>${scale(max,type)}</span></div></div>`).join(""); }
 function activeDefinitions() { return DEFINITIONS[state.loanType] || DEFINITIONS.loan; }
-function renderControls() { controls(loanControls, activeDefinitions()); controls(extraControls, state.loanType === "card" ? [["cardExtra", `${state.cardPaymentMode === "total" ? "Total payment" : "Extra principal"} per ${periodLabel()}`, "currency", 0, 1000, 5]] : DEFINITIONS.extra); controls(investControls, DEFINITIONS.invest); }
+function renderControls() {
+  const card = state.loanType === "card";
+  controls(loanControls, activeDefinitions());
+  controls(extraControls, card ? [["cardExtra", `${state.cardPaymentMode === "total" ? "Total payment" : "Extra principal"} per ${periodLabel()}`, "currency", 0, 1000, 5]] : DEFINITIONS.extra);
+  controls(investControls, DEFINITIONS.invest);
+  controls(cardSpendControls, DEFINITIONS.cardSpend);
+  syncCardSpendSection();
+}
+// Spending only applies to a card, and the amount is meaningless once the user stops charging.
+function syncCardSpendSection() {
+  const card = state.loanType === "card";
+  state.cardSpendMode = CARD_SPEND_MODES[state.cardSpendMode] ? state.cardSpendMode : "stop";
+  cardSpendModeWrap.hidden = !card;
+  cardSpendControls.hidden = !card;
+  if (!card) return;
+  cardSpendSelect.value = state.cardSpendMode;
+  const disabled = state.cardSpendMode === "stop";
+  cardSpendControls.querySelectorAll('.control').forEach(element => element.classList.toggle("is-disabled", disabled));
+  const input = cardSpendControls.querySelector('[data-key="cardSpend"]');
+  if (input) input.disabled = disabled;
+}
 function monthsLabel(months) { const years = Math.floor(months / 12), rest = months % 12; return `${years ? `${years} yr${years === 1 ? "" : "s"}` : ""}${years && rest ? " " : ""}${rest ? `${rest} mo` : ""}`; }
 function monthsFromPeriods(periods) { return periods * periodDays() / 30.44; }
 function investSnapshot(months) {
@@ -235,6 +289,20 @@ function rangeLabel(index, length) {
   const short = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
   return state.frequency === "daily" ? `${short}` : `W${index}`;
 }
+// The honest answer when a card plan never clears: name the shortfall and the payment that fixes it.
+function cardDivergingInsight(standardInterest, totalInterest) {
+  const monthlyMinimum = minimumMonthlyPayment(state.amount);
+  const monthlyInterest = state.amount * dailyRate() * 30.44;
+  const monthlySpend = state.cardSpendMode === "fixed" ? state.cardSpend : 0;
+  const payInFull = state.cardSpendMode === "payInFull";
+  if (payInFull && plan.withExtra?.flat) {
+    return `Paying each statement in full keeps ${money(state.cardSpend)} a month of new charges from becoming debt, so the ${money(state.amount)} balance holds steady rather than growing. Say you will keep charging a fixed amount instead if you want to see what happens when you do not clear the statement.`;
+  }
+  // The figure that actually matters is the payment needed to cover interest plus spending. Stating
+  // it once avoids the confusing "the minimum of X does not cover Y, so pay at least X" phrasing.
+  const breakEven = monthlyInterest + monthlySpend;
+  return `On this plan the balance never clears. Interest runs at about ${money(monthlyInterest)} a month${monthlySpend ? ` and new charges add ${money(monthlySpend)}` : ""}, while the estimated minimum is only ${money(monthlyMinimum)}. Paying at least ${money(breakEven)} a month would cover interest${monthlySpend ? " and new spending" : ""}; anything above that finally reduces the ${money(state.amount)} balance.`;
+}
 function render() {
   const card = state.loanType === "card", strategy = { scheduled: card ? 0 : strategyPayment(false) };
   state.cardPaymentMode = state.cardPaymentMode === "total" ? "total" : "extra";
@@ -242,6 +310,10 @@ function render() {
   document.querySelector("#cardPaymentMode").value = state.cardPaymentMode;
   const withExtra = amortize(strategy, card ? state.cardExtra : state.extra), standard = amortize(strategy, 0);
   currentPlan = withExtra.rows; standardPlan = standard.rows;
+  plan = { withExtra, standard };
+  // A card plan can leave a live balance when the minimum never outpaces interest and spending.
+  // Only a settled run has a payoff date; anything else must say so rather than showing a date.
+  const settled = withExtra.settled !== false;
   const totalInterest = currentPlan.reduce((sum, row) => sum + row.interest, 0), standardInterest = standardPlan.reduce((sum, row) => sum + row.interest, 0);
   const baseline = !card && state.frequency !== "monthly" ? sameOutlayMonthly(strategy.scheduled) : null;
   document.querySelector("#paymentMetricLabel").textContent = card ? "Est. monthly minimum" : "Monthly payment";
@@ -256,21 +328,31 @@ function render() {
         ? `Minimum is due monthly. ${money(state.cardExtra)} goes directly to principal every ${periodLabel()}.`
         : "Minimum is due monthly. Set an extra amount to repeat it on the selected cadence; each extra payment goes to principal."
     : "The extra amount is a monthly budget, spread across the selected payment cadence.";
-  document.querySelector("#payoffDate").textContent = fmtDate(currentPlan.at(-1).date);
-  document.querySelector("#payoffDuration").textContent = `${card ? cardDurationLabel(currentPlan) : periodsLabel(currentPlan.length)} to payoff`;
+  document.querySelector("#payoffDate").textContent = settled ? fmtDate(currentPlan.at(-1).date) : "Not on this plan";
+  document.querySelector("#payoffDuration").textContent = settled
+    ? `${card ? cardDurationLabel(currentPlan) : periodsLabel(currentPlan.length)} to payoff`
+    : withExtra.flat ? "Balance holds steady" : "Balance never clears";
   document.querySelector("#totalInterest").textContent = money(totalInterest);
-  document.querySelector("#interestSaved").textContent = money(Math.max(0, standardInterest - totalInterest));
-  const periodsSaved = standardPlan.length - currentPlan.length, daysSaved = card ? Math.max(0, daysBetween(currentPlan.at(-1).date, standardPlan.at(-1).date)) : 0, cardSaved = cardSavedLabel(daysSaved);
-  document.querySelector("#interestNote").textContent = (card ? state.cardExtra : state.extra) ? `vs. ${money(standardInterest)} minimum only` : "Over the life of the loan";
-  document.querySelector("#savedNote").textContent = card ? state.cardExtra ? daysSaved ? `${cardSaved} sooner` : "Same projected date" : "Minimum-only schedule" : periodsSaved ? `${periodsLabel(periodsSaved)} sooner` : "Keep exploring";
+  // A diverging baseline has no meaningful total, so subtracting from it would print nonsense.
+  const comparable = settled && standard.settled !== false;
+  document.querySelector("#interestSaved").textContent = comparable ? money(Math.max(0, standardInterest - totalInterest)) : "—";
+  const periodsSaved = standardPlan.length - currentPlan.length, daysSaved = card && settled && standard.settled !== false ? Math.max(0, daysBetween(currentPlan.at(-1).date, standardPlan.at(-1).date)) : 0, cardSaved = cardSavedLabel(daysSaved);
+  document.querySelector("#interestNote").textContent = !comparable
+    ? "Minimum-only plan never clears"
+    : (card ? state.cardExtra : state.extra) ? `vs. ${money(standardInterest)} minimum only` : "Over the life of the loan";
+  document.querySelector("#savedNote").textContent = !comparable
+    ? "No baseline to compare"
+    : card ? state.cardExtra ? daysSaved ? `${cardSaved} sooner` : "Same projected date" : "Minimum-only schedule" : periodsSaved ? `${periodsLabel(periodsSaved)} sooner` : "Keep exploring";
   const totalExtraPrincipal = currentPlan.reduce((sum, row) => sum + row.extra, 0), extraPaymentCount = currentPlan.filter(row => row.extra > 0).length;
   document.querySelector("#accrualLabel").textContent = card ? "Extra principal paid" : "Extra interest avoided";
   document.querySelector("#accrualSaved").textContent = card ? money(totalExtraPrincipal) : baseline ? money(Math.max(0, baseline.interest - totalInterest)) : "—";
   document.querySelector("#accrualNote").textContent = card ? extraPaymentCount ? state.cardPaymentMode === "total" ? `Extra principal on ${extraPaymentCount} ${cadenceAdverb()} payment${extraPaymentCount === 1 ? "" : "s"}` : `${extraPaymentCount} ${cadenceAdverb()} payment${extraPaymentCount === 1 ? "" : "s"}` : "No extra payments" : baseline ? `vs. ${money(strategy.scheduled * periodsPerYear() / 12)}/mo paid monthly` : `Switch to weekly or daily to see accrual timing`;
-  document.querySelector("#insightText").textContent = card
+  document.querySelector("#insightText").textContent = card && !settled
+    ? cardDivergingInsight(standardInterest, totalInterest)
+    : card
     ? state.cardExtra ? state.cardPaymentMode === "total"
-      ? `Paying ${money(state.cardExtra)} total every ${periodLabel()}, including the minimum, sends ${money(totalExtraPrincipal)} above the minimum to principal and saves ${money(Math.max(0, standardInterest - totalInterest))} in interest versus minimum-only payments.`
-      : `${daysSaved ? `Paying ${money(state.cardExtra)} extra toward principal every ${periodLabel()} pays off the card ${cardSaved} sooner` : `Paying ${money(state.cardExtra)} extra toward principal every ${periodLabel()} lowers the balance`}, saving ${money(Math.max(0, standardInterest - totalInterest))} in interest versus minimum-only payments.`
+      ? `Paying ${money(state.cardExtra)} total every ${periodLabel()}, including the minimum, sends ${money(totalExtraPrincipal)} above the minimum to principal${comparable ? ` and saves ${money(Math.max(0, standardInterest - totalInterest))} in interest versus minimum-only payments` : ", which clears a balance the minimum-only schedule never would"}.`
+      : `${daysSaved ? `Paying ${money(state.cardExtra)} extra toward principal every ${periodLabel()} pays off the card ${cardSaved} sooner` : `Paying ${money(state.cardExtra)} extra toward principal every ${periodLabel()} lowers the balance`}${comparable ? `, saving ${money(Math.max(0, standardInterest - totalInterest))} in interest versus minimum-only payments` : ", which clears a balance the minimum-only schedule never would"}.`
       : `The estimated monthly minimum is recalculated as the balance falls. Choose whether your recurring amount is extra or includes the minimum.`
     : state.extra
       ? `Paying ${money(state.extra)} extra per month clears the loan ${periodsLabel(periodsSaved)} earlier and saves ${money(Math.max(0, standardInterest - totalInterest))} in interest.`
@@ -286,7 +368,12 @@ function render() {
   renderYearFilter(); renderTable(); drawChart(); renderTradeoff(); if (state.autoSave) saveState();
 }
 function renderYearFilter() { const prior = state.yearFilter; const years = [...new Set(currentPlan.map(row => row.date.getFullYear()))]; yearFilter.innerHTML = `<option value="all">All payments</option>${years.map(year => `<option value="${year}">${year}</option>`).join("")}`; state.yearFilter = years.includes(Number(prior)) ? prior : "all"; yearFilter.value = state.yearFilter; }
-function renderTable() { const rows = state.yearFilter === "all" ? currentPlan : currentPlan.filter(row => row.date.getFullYear() === Number(state.yearFilter)); scheduleRows.innerHTML = rows.map(row => `<tr><td>${row.payment}</td><td>${fmtDateShort(row.date)}</td><td>${row.scheduled ? cents.format(row.scheduled) : "—"}</td><td>${cents.format(row.principal)}</td><td>${cents.format(row.interest)}</td><td>${row.extra ? cents.format(row.extra) : "—"}</td><td>${cents.format(row.balance)}</td></tr>`).join("") || `<tr><td colspan="7">No payments in this year.</td></tr>`; }
+function renderTable() {
+  const rows = state.yearFilter === "all" ? currentPlan : currentPlan.filter(row => row.date.getFullYear() === Number(state.yearFilter));
+  const showCharges = state.loanType === "card" && state.cardSpendMode !== "stop";
+  scheduleRows.innerHTML = rows.map(row => `<tr><td>${row.payment}</td><td>${fmtDateShort(row.date)}</td><td>${row.scheduled ? cents.format(row.scheduled) : "—"}</td><td>${cents.format(row.principal)}</td><td>${cents.format(row.interest)}</td>${showCharges ? `<td>${row.charges ? cents.format(row.charges) : "—"}</td>` : ""}<td>${row.extra ? cents.format(row.extra) : "—"}</td><td>${cents.format(row.balance)}</td></tr>`).join("") || `<tr><td colspan="${showCharges ? 8 : 7}">No payments in this year.</td></tr>`;
+  document.querySelectorAll(".charges-col").forEach(element => { element.hidden = !showCharges; });
+}
 function drawChart() {
   const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, width = Math.max(640, Math.floor(rect.width * dpr)) / dpr, height = Math.max(320, Math.floor(rect.height * dpr)) / dpr;
   canvas.width = width * dpr; canvas.height = height * dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height); ctx.fillStyle="#0c1110"; ctx.fillRect(0,0,width,height);
@@ -320,7 +407,8 @@ document.addEventListener("input", event => { const key=event.target.dataset.key
 document.querySelectorAll(".loan-type").forEach(button=>button.addEventListener("click",()=>{ const type=button.dataset.loanType; Object.assign(state,PRESETS[type],{loanType:type,yearFilter:"all"}); syncLoanTab(type); syncFrequency(state.frequency); document.querySelector("#cardPaymentMode").value = state.cardPaymentMode; document.querySelector("#cardPaymentModeWrap").hidden = type !== "card"; renderControls();render(); }));
 frequencySelect.addEventListener("change", event => { syncFrequency(event.target.value); state.yearFilter = "all"; if(state.loanType === "card") renderControls(); render(); });
 document.querySelector("#cardPaymentMode").addEventListener("change", event => { state.cardPaymentMode = event.target.value === "total" ? "total" : "extra"; renderControls(); render(); });
+cardSpendSelect.addEventListener("change", event => { state.cardSpendMode = CARD_SPEND_MODES[event.target.value] ? event.target.value : "stop"; state.yearFilter = "all"; renderControls(); render(); });
 yearFilter.addEventListener("change",event=>{state.yearFilter=event.target.value;renderTable();if(state.autoSave)saveState();}); document.querySelector("#autoSave").addEventListener("change",event=>{state.autoSave=event.target.checked;if(state.autoSave)saveState();}); document.querySelector("#saveButton").addEventListener("click",saveState); document.querySelector("#resetButton").addEventListener("click",()=>{localStorage.removeItem(STORAGE_KEY);Object.assign(state,DEFAULTS);syncInputs();render();});
-document.querySelector("#downloadButton").addEventListener("click",()=>{ const minimumHeading=state.cardPaymentMode === "total" ? "Minimum Portion" : "Minimum", header=`Payment,Date,${state.loanType === "card" ? minimumHeading : "Scheduled"} Payment,Total Principal,Interest Accrued,Extra Principal,Remaining Balance`; const data=currentPlan.map(r=>[r.payment,fmtDateShort(r.date),r.scheduled.toFixed(2),r.principal.toFixed(2),r.interest.toFixed(2),r.extra.toFixed(2),r.balance.toFixed(2)].join(",")); const link=document.createElement("a"), url=URL.createObjectURL(new Blob([[header,...data].join("\n")],{type:"text/csv"}));link.href=url;link.download="loan-amortization-schedule.csv";link.click();URL.revokeObjectURL(url); });
+document.querySelector("#downloadButton").addEventListener("click",()=>{ const card=state.loanType === "card", showCharges=card && state.cardSpendMode !== "stop", minimumHeading=state.cardPaymentMode === "total" ? "Minimum Portion" : "Minimum", header=`Payment,Date,${card ? minimumHeading : "Scheduled"} Payment,Total Principal,Interest Accrued${showCharges ? ",New Charges" : ""},Extra Principal,Remaining Balance`; const data=currentPlan.map(r=>[r.payment,fmtDateShort(r.date),r.scheduled.toFixed(2),r.principal.toFixed(2),r.interest.toFixed(2),...(showCharges?[(r.charges||0).toFixed(2)]:[]),r.extra.toFixed(2),r.balance.toFixed(2)].join(",")); const link=document.createElement("a"), url=URL.createObjectURL(new Blob([[header,...data].join("\n")],{type:"text/csv"}));link.href=url;link.download=card?"credit-card-schedule.csv":"loan-amortization-schedule.csv";link.click();URL.revokeObjectURL(url); });
 document.querySelector("#startDate").addEventListener("change", event => { state.startDate = event.target.value || DEFAULTS.startDate; state.yearFilter = "all"; render(); });
 window.addEventListener("resize",drawChart); syncInputs(); render();

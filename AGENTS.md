@@ -34,6 +34,34 @@ The critical invariant: **the user's cash outflow is preserved across frequencie
 
 `minPaymentFor` (app.js:53) returns 0 unless `state.loanType === "card"`, where it enforces a 1% (min $25) revolving minimum. Applying that floor to installment loans makes their payments explode.
 
+### Cards are not amortizing loans
+
+A credit card has no contractual term, so `term` is excluded from `DEFINITIONS.card` and payoff time is an **output, never an input**. Two independent axes control a card plan.
+
+**How you pay — `state.cardPaymentMode`**
+
+- `extra` — the issuer's minimum is due monthly, and `state.cardExtra` is paid on top of it every `state.frequency`.
+- `total` — `state.cardExtra` is the whole payment including the minimum. `payoffCardTotal` splits it into a minimum portion and extra principal.
+
+**What you keep charging — `state.cardSpendMode`**
+
+- `payInFull` — the statement is cleared each period, so charges never revolve and the balance holds flat until the extra payment reduces it.
+- `fixed` — `state.cardSpend` per month is added to the balance with the statement.
+- `stop` — no new charges; the balance amortizes, slowly if only the minimum is paid.
+
+`state.cardSpend` is monthly-denominated and prorated through `cardSpendPerPeriod()`, matching the extra. New charges are added to the balance **before** that period's payment is computed, so a pay-in-full user actually clears them; computing the payment first would let charges revolve silently.
+
+Both card paths are event-driven rather than per-period: the issuer bills monthly (`addCalendarMonths`) while the extra may be weekly or daily, and the row emitted for a date is whichever event falls on it. That is why `payoffCard` is separate from `payoffWithPayment`.
+
+**A card plan can fail to settle, and that is often the correct answer.** The 1% minimum on a $6,200 balance at 22.9% APR is $62 against $118 of monthly interest. Both card paths return `{ settled, diverging, flat, truncated }`:
+
+- `settled` — the balance actually reached zero. **Only then is `rows.length` a payoff duration.**
+- `diverging` — the balance grew during the run. `render()` must show "Not on this plan / Balance never clears".
+- `flat` — the pay-in-full discipline holding steady rather than falling.
+- The loop also breaks past `state.amount * 4`, or after 360 periods once diverging or flat, so a runaway balance cannot produce a meaningless multi-billion-dollar total.
+
+`cardDivergingInsight()` names the interest and spending that outpace the minimum, and the payment that would break even.
+
 ### Two plans, always
 
 `render()` builds `strategy = { scheduled: strategyPayment(false) }` and then calls `amortize(strategy, state.extra)` and `amortize(strategy, 0)` (app.js:182), storing the results in `currentPlan` (with extra payments) and `standardPlan` (baseline). Most metrics are a comparison between the two. The loop stops when the balance drops below `0.005`, a float-tolerance guard — do not replace it with `> 0`, since floating-point residue otherwise causes an extra near-zero payment row.
@@ -80,6 +108,10 @@ The x-axis is period index, not calendar time, so a daily plan's labels are date
 - **Do not use `paymentFor()` directly as the per-period payment.** It returns a monthly amount; it is only valid after the frequency conversion.
 - `index.html` does not set `autocomplete`/validation on the numeric inputs; out-of-range values are only clamped by the `min`/`max` attributes on the inputs, not in JS beyond the `Math.max(0, ...)` in `sync`.
 - `minPaymentFor` must stay gated on `state.loanType === "card"`. Applying a 1% floor to an installment loan overrides the amortized payment and produces a wrong (too fast) payoff.
+- **Never present a card payoff date without checking `settled`.** A truncated diverging schedule looks exactly like a short payoff if you read `rows.length` directly, silently turning "this debt never clears" into "you are debt-free in 13 years".
+- **Never subtract a diverging baseline.** When `standard.settled === false` the minimum-only total is an artifact of the loop cap, so `interestSaved` falls back to "—" and the insight text uses different wording instead of printing a number in the millions.
+- `syncCardSpendSection()` shows the spending controls only for a card and disables the amount when the mode is `stop`; `renderControls()` calls it, and the loan-type tab handler re-applies the mode so each preset keeps its own spending values.
+- The schedule table and CSV add a `New charges` column only when a card is in play and spending is not `stop`, driven by the `charges-col` class and `renderTable()`. Keep the header and the row cells in step; they live in different files.
 - `renderYearFilter()` (app.js:207) preserves the selected year across recomputes and falls back to `"all"` when the year no longer exists in the plan. Switching frequency or loan type resets it explicitly, because the schedule span changes.
 - The tradeoff section and invest block are toggled with the `hidden` attribute, and `styles.css` re-declares `[hidden] { display:none; }` for both because their base rules set `display`.
 - `#saveButton` writes to `localStorage` explicitly; `#resetButton` removes the key, re-applies `DEFAULTS`, then calls `syncInputs()` to resync the checkbox/date/frequency/tab DOM. New persisted fields need the same treatment there.

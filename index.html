@@ -60,6 +60,15 @@
                 <option value="total">Total payment including minimum</option>
               </select>
             </label>
+            <label class="date-control card-payment-mode" id="cardSpendModeWrap" for="cardSpendMode" hidden>
+              <span>New charges</span>
+              <select id="cardSpendMode">
+                <option value="payInFull">I pay new charges in full</option>
+                <option value="fixed">I keep charging a fixed amount</option>
+                <option value="stop">I stop using the card</option>
+              </select>
+            </label>
+            <div class="control-list card-spend-list" id="cardSpendControls" hidden></div>
             <div class="control-list" id="extraControls"></div>
             <p class="control-note" id="extraNote">The extra amount is a monthly budget, spread across the selected payment cadence.</p>
             <div class="invest-block" id="investBlock" hidden>
@@ -139,7 +148,7 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Payment</th><th>Date</th><th id="scheduledHeading">Scheduled</th><th>Total principal</th><th>Interest accrued</th><th>Extra principal</th><th>Balance</th></tr></thead>
+                <thead><tr><th>Payment</th><th>Date</th><th id="scheduledHeading">Scheduled</th><th>Total principal</th><th>Interest accrued</th><th class="charges-col" hidden>New charges</th><th>Extra principal</th><th>Balance</th></tr></thead>
                 <tbody id="scheduleRows"></tbody>
               </table>
             </div>
