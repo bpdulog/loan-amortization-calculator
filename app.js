@@ -375,8 +375,8 @@ function renderTable() {
   document.querySelectorAll(".charges-col").forEach(element => { element.hidden = !showCharges; });
 }
 function drawChart() {
-  const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, width = Math.max(640, Math.floor(rect.width * dpr)) / dpr, height = Math.max(320, Math.floor(rect.height * dpr)) / dpr;
-  canvas.width = width * dpr; canvas.height = height * dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height); ctx.fillStyle="#0c1110"; ctx.fillRect(0,0,width,height);
+  const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, width = rect.width, height = rect.height; if (!width || !height) return;
+  canvas.width = Math.max(1, Math.floor(width * dpr)); canvas.height = Math.max(1, Math.floor(height * dpr)); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height); ctx.fillStyle="#0c1110"; ctx.fillRect(0,0,width,height);
   const investPlan = getInvestPlan();
   const card = state.loanType === "card", chartStart = card ? addCalendarMonths(startDateDate(), -1) : null, chartEnd = card ? (currentPlan.at(-1).date > standardPlan.at(-1).date ? currentPlan.at(-1).date : standardPlan.at(-1).date) : null;
   const planMax=[currentPlan,standardPlan].reduce((outer,rows)=>Math.max(outer,rows.reduce((inner,row)=>Math.max(inner,row.balance),0)),state.amount), pad={top:25,right:25,bottom:38,left:73}, pw=width-pad.left-pad.right, ph=height-pad.top-pad.bottom, max=Math.max(planMax,1), length=card ? Math.max(1, daysBetween(chartStart, chartEnd)) : Math.max(standardPlan.length,currentPlan.length,investPlan.length||1);
