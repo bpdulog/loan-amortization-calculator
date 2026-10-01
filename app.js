@@ -18,6 +18,7 @@ const DEFINITIONS = {
 };
 const state = loadState();
 let currentPlan = [], standardPlan = [], plan = { withExtra: null, standard: null };
+let chartTimeframe = "12";
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const cardSpendControls = document.querySelector("#cardSpendControls"), cardSpendModeWrap = document.querySelector("#cardSpendModeWrap"), cardSpendSelect = document.querySelector("#cardSpendMode"), loanControls = document.querySelector("#loanControls"), extraControls = document.querySelector("#extraControls"), investControls = document.querySelector("#investControls"), investBlock = document.querySelector("#investBlock"), tradeoffSection = document.querySelector("#tradeoffSection"), scheduleRows = document.querySelector("#scheduleRows"), yearFilter = document.querySelector("#yearFilter"), frequencySelect = document.querySelector("#paymentFrequency"), canvas = document.querySelector("#balanceChart"), ctx = canvas.getContext("2d");
@@ -363,6 +364,7 @@ function render() {
   document.querySelector("#standardLegend").textContent = state.loanType === "card" ? "Minimum only" : "Standard payoff";
   document.querySelector("#chartEyebrow").textContent = card ? "Monthly balance" : "Balance trajectory";
   document.querySelector("#chartTitle").textContent = card ? "Credit card balance by month" : "Your remaining balance";
+  document.querySelector("#cardChartRange").hidden = !card;
   document.querySelector("#scheduledHeading").textContent = card ? state.cardPaymentMode === "total" ? "Minimum portion" : "Minimum" : "Scheduled";
   document.querySelector("#scheduleTitle").textContent = card ? "Credit card payment schedule" : "Payment schedule";
   renderYearFilter(); renderTable(); drawChart(); renderTradeoff(); if (state.autoSave) saveState();
@@ -378,16 +380,28 @@ function drawChart() {
   const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, width = rect.width, height = rect.height; if (!width || !height) return;
   canvas.width = Math.max(1, Math.floor(width * dpr)); canvas.height = Math.max(1, Math.floor(height * dpr)); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height); ctx.fillStyle="#0c1110"; ctx.fillRect(0,0,width,height);
   const investPlan = getInvestPlan();
-  const card = state.loanType === "card", chartStart = card ? addCalendarMonths(startDateDate(), -1) : null, chartEnd = card ? (currentPlan.at(-1).date > standardPlan.at(-1).date ? currentPlan.at(-1).date : standardPlan.at(-1).date) : null;
-  const planMax=[currentPlan,standardPlan].reduce((outer,rows)=>Math.max(outer,rows.reduce((inner,row)=>Math.max(inner,row.balance),0)),state.amount), pad={top:25,right:25,bottom:38,left:73}, pw=width-pad.left-pad.right, ph=height-pad.top-pad.bottom, max=Math.max(planMax,1), length=card ? Math.max(1, daysBetween(chartStart, chartEnd)) : Math.max(standardPlan.length,currentPlan.length,investPlan.length||1);
+  const card = state.loanType === "card", chartStart = card ? addCalendarMonths(startDateDate(), -1) : null;
+  const fullEnd = card ? new Date(Math.max(chartStart.getTime(), currentPlan.at(-1)?.date.getTime() || 0, standardPlan.at(-1)?.date.getTime() || 0)) : null;
+  const chartEnd = card && chartTimeframe !== "all" ? new Date(Math.min(fullEnd.getTime(), addCalendarMonths(chartStart, Number(chartTimeframe)).getTime())) : fullEnd;
+  // Crop before grouping so the boundary month cannot pull in a later payment.
+  const visibleRows = rows => {
+    if (!card) return rows;
+    const visible = monthlyCardRows(rows.filter(row => row.date <= chartEnd)), last = visible.at(-1);
+    if (last && last.date < chartEnd && (rows.at(-1).date > chartEnd || last.balance <= 0.005)) visible.push({ ...last, date: chartEnd });
+    return visible;
+  };
+  const chartCurrent = visibleRows(currentPlan), chartStandard = visibleRows(standardPlan);
+  document.querySelector("#chartRangeNote").textContent = card ? `${fmtDate(chartStart)} to ${fmtDate(chartEnd)}. ${chartEnd < fullEnd ? "Choose Full timeline to see the entire projection." : "Showing the entire projection."}${plan.withExtra.settled === false || plan.standard.settled === false ? " An uncleared balance at the end is not a payoff." : ""}` : "";
+  const planMax=[chartCurrent,chartStandard].reduce((outer,rows)=>Math.max(outer,rows.reduce((inner,row)=>Math.max(inner,row.balance),0)),state.amount), pad={top:25,right:25,bottom:38,left:73}, pw=width-pad.left-pad.right, ph=height-pad.top-pad.bottom, max=Math.max(planMax,1), length=card ? Math.max(1, daysBetween(chartStart, chartEnd)) : Math.max(standardPlan.length,currentPlan.length,investPlan.length||1);
   ctx.strokeStyle="rgba(231,215,168,.14)"; ctx.lineWidth=1; ctx.fillStyle="#b8b2a2"; ctx.font="700 12px Inter, system-ui"; ctx.textAlign="right"; ctx.textBaseline="middle";
   for(let i=0;i<=4;i++){ const y=pad.top+ph*i/4, value=max*(1-i/4); ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(width-pad.right,y);ctx.stroke();ctx.fillText(shortMoney(value),pad.left-12,y); }
-  const points=rows=>{const plotted=card?monthlyCardRows(rows):rows;return [{x:pad.left,y:pad.top+ph*(1-state.amount/max)},...plotted.map((r,i)=>({x:pad.left+pw*(card ? daysBetween(chartStart,r.date)/length : (i+1)/length),y:pad.top+ph*(1-r.balance/max)}))];};
+  const points=rows=>[{x:pad.left,y:pad.top+ph*(1-state.amount/max)},...rows.map((r,i)=>({x:pad.left+pw*(card ? daysBetween(chartStart,r.date)/length : (i+1)/length),y:pad.top+ph*(1-r.balance/max)}))];
   const line=(rows,color,dash,fill)=>{const pts=points(rows); if(fill){const grad=ctx.createLinearGradient(0,pad.top,0,height-pad.bottom);grad.addColorStop(0,"rgba(216,180,95,.32)");grad.addColorStop(1,"rgba(216,180,95,.015)");ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.lineTo(pts.at(-1).x,height-pad.bottom);ctx.lineTo(pad.left,height-pad.bottom);ctx.closePath();ctx.fillStyle=grad;ctx.fill();}ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.strokeStyle=color;ctx.setLineDash(dash);ctx.lineWidth=2.6;ctx.stroke();ctx.setLineDash([]);};
-  line(standardPlan,"rgba(45,212,191,.72)",[7,6],false);
-  line(currentPlan,"#d8b45f",[],true);
+  line(chartStandard,"rgba(45,212,191,.72)",[7,6],false);
+  line(chartCurrent,"#d8b45f",[],true);
   if (investPlan.length > 0) line(investPlan, "#a78bfa", [5, 4], false);
-  ctx.fillStyle="#b8b2a2";ctx.textAlign="center";ctx.textBaseline="top";for(let i=0;i<=5;i++){const index=Math.min(length,Math.round(length*i/5)), label=card ? new Intl.DateTimeFormat("en-US",{month:"short",year:"2-digit"}).format(addDays(chartStart,index)) : rangeLabel(index,length);ctx.fillText(label,pad.left+pw*index/length,height-pad.bottom+13);}
+  const ticks = card ? Math.max(1, Math.min(5, Math.floor(pw / 85))) : 5;
+  ctx.fillStyle="#b8b2a2";ctx.textAlign="center";ctx.textBaseline="top";for(let i=0;i<=ticks;i++){const index=Math.min(length,Math.round(length*i/ticks)), label=card ? new Intl.DateTimeFormat("en-US",{month:"short",year:"2-digit"}).format(addDays(chartStart,index)) : rangeLabel(index,length);ctx.textAlign=card ? i===0 ? "left" : i===ticks ? "right" : "center" : "center";ctx.fillText(label,pad.left+pw*index/length,height-pad.bottom+13);}
 }
 function shortMoney(value) { return value >= 1000000 ? `$${(value/1000000).toFixed(1)}M` : value >= 1000 ? `$${Math.round(value/1000)}K` : money(value); }
 function syncFrequency(value) { state.frequency = PERIODS[value] ? value : DEFAULTS.frequency; frequencySelect.value = state.frequency; }
@@ -406,6 +420,7 @@ function sync(key, val) { state[key] = Math.max(0, Number(val) || 0); document.q
 document.addEventListener("input", event => { const key=event.target.dataset.key; if(key) sync(key,event.target.value); });
 document.querySelectorAll(".loan-type").forEach(button=>button.addEventListener("click",()=>{ const type=button.dataset.loanType; Object.assign(state,PRESETS[type],{loanType:type,yearFilter:"all"}); syncLoanTab(type); syncFrequency(state.frequency); document.querySelector("#cardPaymentMode").value = state.cardPaymentMode; document.querySelector("#cardPaymentModeWrap").hidden = type !== "card"; renderControls();render(); }));
 frequencySelect.addEventListener("change", event => { syncFrequency(event.target.value); state.yearFilter = "all"; if(state.loanType === "card") renderControls(); render(); });
+document.querySelector("#chartTimeframe").addEventListener("change", event => { chartTimeframe = ["12", "36", "60", "all"].includes(event.target.value) ? event.target.value : "12"; drawChart(); });
 document.querySelector("#cardPaymentMode").addEventListener("change", event => { state.cardPaymentMode = event.target.value === "total" ? "total" : "extra"; renderControls(); render(); });
 cardSpendSelect.addEventListener("change", event => { state.cardSpendMode = CARD_SPEND_MODES[event.target.value] ? event.target.value : "stop"; state.yearFilter = "all"; renderControls(); render(); });
 yearFilter.addEventListener("change",event=>{state.yearFilter=event.target.value;renderTable();if(state.autoSave)saveState();}); document.querySelector("#autoSave").addEventListener("change",event=>{state.autoSave=event.target.checked;if(state.autoSave)saveState();}); document.querySelector("#saveButton").addEventListener("click",saveState); document.querySelector("#resetButton").addEventListener("click",()=>{localStorage.removeItem(STORAGE_KEY);Object.assign(state,DEFAULTS);syncInputs();render();});

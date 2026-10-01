@@ -106,7 +106,17 @@
                 <span id="investLegend" hidden><i class="purple-dot"></i>Investing scenario</span>
               </div>
             </div>
-            <canvas id="balanceChart" width="1100" height="470" aria-label="Remaining balance chart"></canvas>
+            <div class="chart-range" id="cardChartRange" hidden>
+              <label for="chartTimeframe">Show timeline</label>
+              <select id="chartTimeframe">
+                <option value="12">First year</option>
+                <option value="36">First 3 years</option>
+                <option value="60">First 5 years</option>
+                <option value="all">Full timeline</option>
+              </select>
+              <p id="chartRangeNote" aria-live="polite"></p>
+            </div>
+            <canvas id="balanceChart" width="1100" height="470" aria-label="Remaining balance chart" aria-describedby="chartRangeNote"></canvas>
           </div>
 
           <section class="tradeoff-shell" id="tradeoffSection" hidden aria-label="Extra payment tradeoff">
